@@ -243,7 +243,7 @@ async function startServer() {
   try {
     await connectToMongo();
 
-    app.listen(PORT,"3000",'0.0.0.0',() => {
+    app.listen(PORT,'0.0.0.0',() => {
       console.log(` Server is running on port ${PORT}`);
       console.log(` Health check: http://localhost:${PORT}/health`);
     });
