@@ -6,7 +6,7 @@ const { MongoClient, ObjectId } = require("mongodb");
 const cors = require("cors");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000 ;
 
 // MongoDB connection string
 const uri = process.env.MONGODB_URI || "mongodb+srv://daniellajudith:judith06@cluster0.xe4miek.mongodb.net/";
@@ -15,7 +15,7 @@ let client, db;
 // CORS configuration
 app.use(cors({
   origin: [
-    'http://localhost:3000',
+    'http://localhost:3000 ',
     'http://localhost:3001',
     'http://localhost:5173',
     'http://localhost:8080',
@@ -243,7 +243,7 @@ async function startServer() {
   try {
     await connectToMongo();
 
-    app.listen(PORT, () => {
+    app.listen(PORT,"3000",'0.0.0.0',() => {
       console.log(` Server is running on port ${PORT}`);
       console.log(` Health check: http://localhost:${PORT}/health`);
     });
