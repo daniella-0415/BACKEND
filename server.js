@@ -164,6 +164,7 @@ app.get("/products", async (req, res) => {
   try {
     const products = await db.collection("products").find({}).toArray();
     res.json(products);
+    res.status(200).json(products);
   } catch (err) {
     console.error(" Get products error:", err);
     res.status(500).json({ error: err.message });
@@ -234,6 +235,221 @@ app.post("/products/:id/unlike", async (req, res) => {
     res.json({ message: "Product unliked successfully" });
   } catch (err) {
     console.error(" Unlike product error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== CART ROUTES ==========
+// Carts
+app.get("/carts", async (req, res) => {
+  try {
+    const carts = await db.collection("carts").find({}).toArray();
+    res.status(200).json(carts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+app.post("/carts", async (req, res) => {
+  try {
+    const { userId, productId, quantity } = req.body;
+    if (!userId || !productId) return res.status(400).json({ error: "userId and productId required" });
+
+    await db.collection("carts").updateOne(
+      { userId, productId },
+      { $inc: { quantity: quantity || 1 } },
+      { upsert: true }
+    );
+    res.json({ message: "Item added to cart" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/cart/:userId/:productId", async (req, res) => {
+  try {
+    await db.collection("carts").deleteOne({
+      userId: req.params.userId,
+      productId: req.params.productId
+    });
+    res.json({ message: "Item removed from cart" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== ORDER ROUTES ==========
+// Orders
+app.get("/orders", async (req, res) => {
+  try {
+    const orders = await db.collection("orders").find({}).toArray();
+    res.status(200).json(orders);
+  } catch (err) {
+    console.error("Get orders error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+app.post("/orders", async (req, res) => {
+  try {
+    const { userId, items, total, shippingAddress } = req.body;
+    const order = {
+      userId,
+      items,
+      total,
+      shippingAddress,
+      status: "pending",
+      createdAt: new Date()
+    };
+    const result = await db.collection("orders").insertOne(order);
+    res.status(201).json({ orderId: result.insertedId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== WISHLIST ROUTES ==========
+app.get("/wishlist/:userId", async (req, res) => {
+  try {
+    const items = await db.collection("wishlists")
+      .find({ userId: req.params.userId })
+      .toArray();
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/wishlist", async (req, res) => {
+  try {
+    const { userId, productId } = req.body;
+    await db.collection("wishlists").updateOne(
+      { userId, productId },
+      { $set: { userId, productId } },
+      { upsert: true }
+    );
+    res.json({ message: "Item added to wishlist" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/wishlist/:userId/:productId", async (req, res) => {
+  try {
+    await db.collection("wishlists").deleteOne({
+      userId: req.params.userId,
+      productId: req.params.productId
+    });
+    res.json({ message: "Item removed from wishlist" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== SHIPPING ROUTES ==========
+app.get("/shipping/:userId", async (req, res) => {
+  try {
+    const info = await db.collection("shipping").findOne({ userId: req.params.userId });
+    res.json(info || {});
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/shipping", async (req, res) => {
+  try {
+    const { userId, address, city, postalCode, country } = req.body;
+    await db.collection("shipping").updateOne(
+      { userId },
+      { $set: { address, city, postalCode, country, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ message: "Shipping info saved" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== PAYMENT ROUTES ==========
+app.post("/payments", async (req, res) => {
+  try {
+    const { userId, orderId, amount, method, status } = req.body;
+    const payment = {
+      userId,
+      orderId,
+      amount,
+      method,
+      status: status || "pending",
+      createdAt: new Date()
+    };
+    const result = await db.collection("payments").insertOne(payment);
+    res.status(201).json({ paymentId: result.insertedId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/payments/:userId", async (req, res) => {
+  try {
+    const payments = await db.collection("payments")
+      .find({ userId: req.params.userId })
+      .toArray();
+    res.json(payments);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== CATEGORY ROUTES ==========
+app.get("/categories", async (req, res) => {
+  try {
+    const cats = await db.collection("categories").find({}).toArray();
+    res.json(cats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/categories", async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const result = await db.collection("categories").insertOne({
+      name,
+      description: description || "",
+      createdAt: new Date()
+    });
+    res.status(201).json({ categoryId: result.insertedId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/categories/:id", async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid category ID" });
+
+    await db.collection("categories").updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { name, description, updatedAt: new Date() } }
+    );
+    res.json({ message: "Category updated" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/categories/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid category ID" });
+
+    await db.collection("categories").deleteOne({ _id: new ObjectId(id) });
+    res.json({ message: "Category deleted" });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
