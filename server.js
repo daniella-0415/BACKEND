@@ -1,184 +1,176 @@
-import express from "express";
-import cors from "cors";
+// server.js
 import dotenv from "dotenv";
-import base64 from "base-64";
-import { MongoClient, ObjectId } from "mongodb";
-
 dotenv.config();
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const uri = process.env.MONGODB_URI;
+app.use(express.json());
+app.use(cors());
+const uri = process.env.MONGODB_URI 
 
-let client, db;
+// ------------------------------------------------------
+// 📌 1. DATABASE CONNECTION
+// ------------------------------------------------------
+mongoose
+  .connect(uri, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log(" MongoDB Connected"))
+  .catch((err) => console.log(" DB Error:", err));
 
-app.use(cors({ origin: ["http://localhost:3000", "http://localhost:5173"], credentials: true }));
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+// ------------------------------------------------------
+// 📌 2. MODELS
+// ------------------------------------------------------
+const userSchema = new mongoose.Schema({
+  name: String,
+  email: { type: String, unique: true },
+  password: String,
+});
 
-// MongoDB connection
-async function connectToMongo() {
-  client = new MongoClient(uri);
-  await client.connect();
-  db = client.db("DannyShoes");
-  console.log("MongoDB connected");
+const productSchema = new mongoose.Schema({
+  name: String,
+  price: Number,
+  img: String,
+  category: String,
+});
+
+const wishlistSchema = new mongoose.Schema({
+  userId: String,
+  productId: String,
+});
+
+const cartSchema = new mongoose.Schema({
+  userId: String,
+  productId: String,
+  quantity: Number,
+});
+
+const User = mongoose.model("User", userSchema);
+const Product = mongoose.model("Product", productSchema);
+const Wishlist = mongoose.model("Wishlist", wishlistSchema);
+const Cart = mongoose.model("Cart", cartSchema);
+
+// ------------------------------------------------------
+// 📌 3. AUTH MIDDLEWARE
+// ------------------------------------------------------
+function auth(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "No token provided" });
+
+  try {
+    const decoded = jwt.verify(token, "SECRET123");
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(403).json({ message: "Invalid token" });
+  }
 }
 
-await connectToMongo();
-
-// ----------- Health Check ----------
-app.get("/", (req, res) => res.json({ message: "API running!", status: "OK" }));
-app.get("/health", (req, res) => res.json({ status: "OK", database: db ? "connected" : "disconnected" }));
-
-// ----------- USERS -----------
+// ------------------------------------------------------
+// 📌 4. AUTH ROUTES (Signup & Signin)
+// ------------------------------------------------------
 app.post("/signup", async (req, res) => {
   try {
-    const { email, password, firstName, lastName } = req.body;
-    if (!email || !password) return res.status(400).json({ error: "Email and password required" });
-    const collection = db.collection("users");
-    const existingUser = await collection.findOne({ email: email.toLowerCase() });
-    if (existingUser) return res.status(400).json({ error: "User already exists" });
+    const { name, email, password } = req.body;
 
-    const newUser = {
-      email: email.toLowerCase(),
-      password: base64.encode(password),
-      firstName: firstName || "",
-      lastName: lastName || "",
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    const result = await collection.insertOne(newUser);
-    res.status(201).json({ userId: result.insertedId, email: newUser.email });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ message: "Email already used" });
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    const user = new User({ name, email, password: hashed });
+    await user.save();
+
+    res.json({ message: "Signup successful" });
+  } catch (err) {  
+    res.status(500).json({ message: "Signup error", error: err.message });
   }
 });
 
 app.post("/signin", async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await db.collection("users").findOne({ email: email.toLowerCase() });
-    if (!user || base64.decode(user.password) !== password) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-    res.status(200).json({ userId: user._id, email: user.email });
+
+    const user = await User.findOne({ email });
+    if (!user)
+      return res.status(400).json({ message: "Invalid email or password" });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match)
+      return res.status(400).json({ message: "Invalid email or password" });
+
+    const token = jwt.sign({ id: user._id, email: user.email }, "SECRET123", {
+      expiresIn: "7d",
+    });
+
+    res.json({ message: "Signin successful", token });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ message: "Signin error" });
   }
 });
 
-// ----------- PRODUCTS -----------c
+// ------------------------------------------------------
+// 📌 5. PRODUCT ROUTES (Public)
+// ------------------------------------------------------
 app.get("/products", async (req, res) => {
-  const products = await db.collection("products").find({}).toArray();
-  res.status(200).json(products);
+  const products = await Product.find();
+  res.json(products);
 });
 
-app.get("/products/:id", async (req, res) => {
-  try {
-    const product = await db.collection("products").findOne({ _id: new ObjectId(req.params.id) });
-    if (!product) return res.status(404).json({ error: "Product not found" });
-    res.json(product);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// ------------------------------------------------------
+// 📌 6. WISHLIST (Protected)
+// ------------------------------------------------------
+app.post("/wishlist", auth, async (req, res) => {
+  const { productId } = req.body;
+
+  const exists = await Wishlist.findOne({
+    userId: req.user.id,
+    productId,
+  });
+
+  if (exists) return res.json({ message: "Already in wishlist" });
+
+  const item = new Wishlist({
+    userId: req.user.id,
+    productId,
+  });
+
+  await item.save();
+  res.json({ message: "Added to wishlist" });
 });
 
-app.post("/products", async (req, res) => {
-  const { name, price, description } = req.body;
-  if (!name || !price) return res.status(400).json({ error: "Name and price required" });
-  const product = { name, price, description: description || "", likes: [], createdAt: new Date() };
-  const result = await db.collection("products").insertOne(product);
-  res.status(201).json({ productId: result.insertedId, ...product });
-});
-
-// ----------- ORDERS -----------
-app.post("/orders", async (req, res) => {
-  const { userId, items, total, shippingAddress } = req.body;
-  const order = { userId, items, total, shippingAddress, status: "pending", createdAt: new Date() };
-  const result = await db.collection("orders").insertOne(order);
-  res.status(201).json({ orderId: result.insertedId });
-});
-
-app.get("/orders", async (req, res) => {
-  const orders = await db.collection("orders").find({}).toArray();
-  res.status(200).json(orders);
-});
-
-// ----------- CART -----------
-app.post("/carts", async (req, res) => {
-  const { userId, productId, quantity } = req.body;
-  if (!userId || !productId) return res.status(400).json({ error: "userId and productId required" });
-  await db.collection("carts").updateOne(
-    { userId, productId },
-    { $inc: { quantity: quantity || 1 } },
-    { upsert: true }
-  );
-  res.json({ message: "Item added to cart" });
-});
-
-app.get("/carts", async (req, res) => {
-  const carts = await db.collection("carts").find({}).toArray();
-  res.status(200).json(carts);
-});
-
-// ----------- WISHLIST -----------
-app.post("/wishlist", async (req, res) => {
-  const { userId, productId } = req.body;
-  await db.collection("wishlists").updateOne(
-    { userId, productId },
-    { $set: { userId, productId } },
-    { upsert: true }
-  );
-  res.json({ message: "Item added to wishlist" });
-});
-
-app.get("/wishlist/:userId", async (req, res) => {
-  const items = await db.collection("wishlists").find({ userId: req.params.userId }).toArray();
+app.get("/wishlist", auth, async (req, res) => {
+  const items = await Wishlist.find({ userId: req.user.id });
   res.json(items);
 });
 
-// ----------- SHIPPING -----------
-app.post("/shipping", async (req, res) => {
-  const { userId, address, city, postalCode, country } = req.body;
-  await db.collection("shipping").updateOne(
-    { userId },
-    { $set: { address, city, postalCode, country, updatedAt: new Date() } },
-    { upsert: true }
-  );
-  res.json({ message: "Shipping info saved" });
+// ------------------------------------------------------
+// 📌 7. CART (Protected)
+// ------------------------------------------------------
+app.post("/cart", auth, async (req, res) => {
+  const { productId, quantity } = req.body;
+
+  const item = new Cart({
+    userId: req.user.id,
+    productId,
+    quantity,
+  });
+
+  await item.save();
+  res.json({ message: "Added to cart" });
 });
 
-app.get("/shipping/:userId", async (req, res) => {
-  const info = await db.collection("shipping").findOne({ userId: req.params.userId });
-  res.json(info || {});
+app.get("/cart", auth, async (req, res) => {
+  const items = await Cart.find({ userId: req.user.id });
+  res.json(items);
 });
 
-// ----------- PAYMENTS -----------
-app.post("/payments", async (req, res) => {
-  const { userId, orderId, amount, method, status } = req.body;
-  const payment = { userId, orderId, amount, method, status: status || "pending", createdAt: new Date() };
-  const result = await db.collection("payments").insertOne(payment);
-  res.status(201).json({ paymentId: result.insertedId });
-});
-
-app.get("/payments/:userId", async (req, res) => {
-  const payments = await db.collection("payments").find({ userId: req.params.userId }).toArray();
-  res.json(payments);
-});
-
-// ----------- CATEGORIES -----------
-app.post("/categories", async (req, res) => {
-  const { name, description } = req.body;
-  const result = await db.collection("categories").insertOne({ name, description: description || "", createdAt: new Date() });
-  res.status(201).json({ categoryId: result.insertedId });
-});
-
-app.get("/categories", async (req, res) => {
-  const cats = await db.collection("categories").find({}).toArray();
-  res.json(cats);
-});
-
-// ----------- Start Server ----------
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-export default app;
+// ------------------------------------------------------
+// 📌 SERVER START
+// ------------------------------------------------------
+app.listen(3000, () => console.log("🚀 Server running on port 3000"));
