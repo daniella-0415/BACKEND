@@ -72,7 +72,7 @@ function auth(req, res, next) {
 }
 
 // ------------------------------------------------------
-// 📌 4. AUTH ROUTES (Signup & Signin)
+// 📌 4 AUTH ROUTES (Signup & Signin)
 // ------------------------------------------------------
 app.post("/signup", async (req, res) => {
   try {
