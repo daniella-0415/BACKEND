@@ -72,7 +72,7 @@ function auth(req, res, next) {
 }
 
 // ------------------------------------------------------
-// 📌 4 AUTH ROUTES (Signup & Signin)
+// 📌 4. AUTH ROUTES (Signup & Signin)
 // ------------------------------------------------------
 app.post("/signup", async (req, res) => {
   try {
@@ -123,7 +123,7 @@ app.get("/products", async (req, res) => {
 });
 
 // ------------------------------------------------------
-// 📌 6. WISHLIST (Protected)
+// 📌 6 WISHLIST (Protected)
 // ------------------------------------------------------
 app.post("/wishlist", auth, async (req, res) => {
   const { productId } = req.body;
