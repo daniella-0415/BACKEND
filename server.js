@@ -9,8 +9,27 @@ import jwt from "jsonwebtoken";
 
 const app = express();
 app.use(express.json());
-app.use(cors());
 const uri = process.env.MONGODB_URI 
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://16.171.156.22:3000",
+   "http://www.dannyshoes-new.com.s3-website-us-east-1.amazonaws.com"
+   ];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // allow REST calls from tools like Postman (no origin)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS: " + origin));
+    }
+  },
+  credentials: true
+}));
+
 
 // ------------------------------------------------------
 // 📌 1. DATABASE CONNECTION
@@ -72,10 +91,11 @@ function auth(req, res, next) {
 }
 
 // ------------------------------------------------------
-// 📌 4. AUTH ROUTES (Signup & Signin)
+// 📌 4 AUTH ROUTES (Signup & Signin)
 // ------------------------------------------------------
 app.post("/signup", async (req, res) => {
   try {
+    console.log(req.body)
     const { name, email, password } = req.body;
 
     const exists = await User.findOne({ email });
@@ -89,6 +109,7 @@ app.post("/signup", async (req, res) => {
     res.json({ message: "Signup successful" });
   } catch (err) {  
     res.status(500).json({ message: "Signup error", error: err.message });
+    console.log(err)
   }
 });
 
@@ -123,7 +144,7 @@ app.get("/products", async (req, res) => {
 });
 
 // ------------------------------------------------------
-// 📌 6 WISHLIST (Protected)
+// 📌 6. WISHLIST (Protected)
 // ------------------------------------------------------
 app.post("/wishlist", auth, async (req, res) => {
   const { productId } = req.body;
